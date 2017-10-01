@@ -93,7 +93,7 @@ class Tag (tuple):
         else:
             cls = 'Tag.' + cls
         return 'Tag(%r%s, cls=%s)' % (self.tag,
-                                      ', constructed=true' if self.constructed else '',
+                                      ', constructed=True' if self.constructed else '',
                                       cls)
     
 for (n, v) in Tag._universal_tags:
@@ -186,24 +186,30 @@ class Encoder:
             self._emit_tag_length(Tag.Boolean, 1)
             self.fragments.write( b'\xFF' if value else b'\x00' )
         elif isinstance(value, int):
-            bitsize = value.bit_length()
-            if bitsize == 0:
+            if value == 0:
                 encoded = b'\x00'  # Special case.
             else:
-                (bytecount, extrabits) = divmod(bitsize, 8)
-                if extrabits > 0:
-                    bytecount += 1
+                if value > 0:
+                    bitsize = value.bit_length()
+                else:
+                    bitsize = (-1 - value).bit_length()
+                # We need to add one bit for the sign bit. We then
+                # want to take ceil(bitsize / 8), which we can do
+                # by adding 7 before dividing. So we want to add (7+1)
+                # before dividing, which is equivalent to adding 1
+                # after dividing.
+                bytecount = ( bitsize // 8 ) + 1
                 encoded = value.to_bytes(bytecount, 'big', signed=True)
                 assert len(encoded) == bytecount
             self._emit_tag_length(Tag.Integer, len(encoded))
             self.fragments.write(encoded)
         elif isinstance(value, (list, tuple)):
-            self.enter(Tag.Sequence.tag)
+            self.enter(Tag.Sequence)
             for elt in value:
                 self.write(elt)
             self.leave()
         elif isinstance(value, set):
-            self.enter(Tag.Set.tag)
+            self.enter(Tag.Set)
             members = list()
             for elt in value:
                 self.write(elt)
@@ -237,7 +243,7 @@ class Encoder:
 
     def _emit_tag(self, tagnr, constructed, cls):
         t0 = (0x20 if constructed else 0) | cls
-        if tagnr <= 0x1F:
+        if tagnr < 0x1F:
             self.fragments.write(bytes([ tagnr | t0 ]))
         else:
             buf = [ 0x1F | t0 , tagnr & 0x7F ]
@@ -253,6 +259,7 @@ class Encoder:
             return bytes([length])
         else:
             # Long form: byte-count then bytes
+            buf = [ ]
             while length:
                 buf.insert(0, length & 0xFF)
                 length >>= 8

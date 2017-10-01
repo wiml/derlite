@@ -2,6 +2,7 @@
 import derlite
 import datetime
 import unittest
+from derlite import Tag
 
 class Test (unittest.TestCase):
 
@@ -22,11 +23,75 @@ class Test (unittest.TestCase):
         self.assertFalse(dec.eof())
         self.assertEqual(dec.read_integer(), 1)
         self.assertEqual(dec.read_boolean(), True)
-        self.assertEqual(dec.peek(), derlite.Tag.OctetString)
+        self.assertEqual(dec.peek(), Tag.OctetString)
         self.assertEqual(dec.read_octet_string(), b'\x00\x42\xFE')
         self.assertEqual(dec.peek(), None)
         self.assertTrue(dec.eof())
-    
+
+    def test_simple_compound(self):
+
+        enc = derlite.Encoder()
+        enc.write(-128)
+        enc.write( [ None ] )
+        enc.write( [] )
+        enc.write(128)
+
+        dec = self.around(enc, '020180 30020500 3000 02020080')
+        self.assertEqual(dec.read_integer(), -128)
+        self.assertFalse(dec.eof())
+        self.assertEqual(dec.peek(), Tag.Sequence)
+        dec.enter(Tag.Sequence)
+        self.assertEqual(dec.peek(), Tag.Null)
+        self.assertEqual(dec.read_octet_string(Tag.Null), b'')
+        self.assertTrue(dec.eof())
+        self.assertIsNone(dec.peek())
+        dec.leave()
+        self.assertFalse(dec.eof())
+        dec.enter(Tag.Sequence)
+        self.assertTrue(dec.eof())
+        dec.leave()
+        self.assertFalse(dec.eof())
+        self.assertEqual(dec.read_integer(), 128)
+        self.assertTrue(dec.eof())
+
+    def test_tagobject(self):
+
+        self.assertEqual(repr(Tag.Sequence),
+                         'Tag.Sequence')
+        self.assertEqual(repr(Tag(0, constructed=True, cls=Tag.Application)),
+                         'Tag(0, constructed=True, cls=Tag.Application)')
+
+
+    def test_tagforms(self):
+
+        enc = derlite.Encoder()
+        enc.enter(31)
+        enc.write_value(Tag(16, constructed=False, cls=Tag.Application),
+                        b'      ')
+        ablob = b'ABCDE' * 100
+        enc.write_value(Tag(1000, constructed=False, cls=Tag.Context),
+                        ablob)
+        enc.leave()
+
+        dec = self.around(enc,
+                          'BF1F820202 5006202020202020' +
+                          '9F87688201F4 ' +
+                          ( '4142434445' * 100 ))
+
+        self.assertIsNone(dec.enter(32, optional=True))
+        self.assertEqual(dec.enter(31),
+                         Tag(31, constructed=True, cls=Tag.Context))
+        self.assertRaises(derlite.DecodeError, dec.read_octet_string)
+        self.assertEqual(dec.read_octet_string(Tag(16, cls=Tag.Application)),
+                         b'      ')
+        self.assertEqual(dec.read_octet_string(Tag(1000, cls=Tag.Context)),
+                         ablob)
+        self.assertTrue(dec.eof())
+        dec.leave()
+        self.assertTrue(dec.eof())
+        self.assertRaises(derlite.Error, dec.leave)
+
+
 class TestDatetimes (unittest.TestCase):
 
     def roundtrip(self, dt, der):
@@ -42,6 +107,8 @@ class TestDatetimes (unittest.TestCase):
     def test_naive(self):
         self.roundtrip(datetime.datetime.utcfromtimestamp(0),
                        b'\x1b\x0e19700101000000' )
+        self.roundtrip(datetime.datetime.utcfromtimestamp(86460.75),
+                       b'\x1b\x1119700102000100.75' )
 
     def test_utc(self):
         utc = datetime.timezone.utc
@@ -98,7 +165,7 @@ class TestOids (unittest.TestCase):
         
         self.assertRaises(Exception,
                           derlite.Oid, 42)
-        
+
     def test_misc(self):
         self.assertEqual(str(derlite.Oid( (2,5,4,3) )),
                          '2.5.4.3')
