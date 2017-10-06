@@ -209,17 +209,7 @@ class Encoder:
                 self.write(elt)
             self.leave()
         elif isinstance(value, set):
-            self.enter(Tag.Set)
-            members = list()
-            for elt in value:
-                self.write(elt)
-                members.append(self.fragments.getvalue())
-                self.fragments = io.BytesIO()
-            members.sort() # TODO: proper lexicographic ordering
-            self.fragments = self.stack.pop()
-            self.fragments.write(self._encode_length(sum(len(elt) for elt in members)))
-            for elt in members:
-                self.fragments.write(elt)
+            self.write_set(value)
         elif isinstance(value, bytes):
             self._emit_tag_length(Tag.OctetString, len(value))
             self.fragments.write(value)
@@ -234,6 +224,29 @@ class Encoder:
         """Write a tag with arbitrary contents (supplied as a bytes object)."""
         self._emit_tag_length(tag, len(der))
         self.fragments.write(der)
+
+    def write_set(self, values):
+        """Write a set of objects (a constructed object with tag SET).
+
+        `values` may be any iterable, generator, sequence, etc., containing
+        writable values. They are encoded to individual buffers, which are then
+        sorted before being appended to the output, in order to produce
+        canonical DER encoding."""
+        
+        self.enter(Tag.Set)
+        members = list()
+        content_length = 0
+        for elt in values:
+            self.write(elt)
+            fragment = self.fragments.getvalue()
+            self.fragments = io.BytesIO()
+            content_length += len(fragment)
+            members.append(fragment)
+        members.sort() # TODO: verify proper ordering
+        self.fragments = self.stack.pop()
+        self.fragments.write(self._encode_length(content_length))
+        for elt in members:
+            self.fragments.write(elt)
 
     def _emit_tag_length(self, tag, length):
         self._emit_tag(tag.tag,

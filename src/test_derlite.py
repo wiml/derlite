@@ -136,6 +136,16 @@ class Test (unittest.TestCase):
         dec.leave()
         self.assertTrue(dec.eof())
 
+    def test_set2(self):
+        # More set tests
+        enc = derlite.Encoder()
+        enc.write_set( bytes([ 1, b ]) for b in (4, 2, 8) )
+        dec = self.around(enc, '310C 04020102 04020104 04020108')
+
+        enc = derlite.Encoder()
+        enc.write_set( [ None, False, [], derlite.Oid((1, 10)), True ] )
+        dec = self.around(enc, '310D 010100 0101FF 0500 060132 3000')
+
 
 class TestDatetimes (unittest.TestCase):
 
