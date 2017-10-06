@@ -303,7 +303,7 @@ class Decoder:
         entered with enter().
 
         This method can be used to determine the next object's type/tag
-        when decoding data with variabe contents, e.g. OPTIONAL or CHOICE
+        when decoding data with variable contents, e.g. OPTIONAL or CHOICE
         elements.
 
         This does not consume the tag or advance the reader past the object;
@@ -371,7 +371,7 @@ class Decoder:
         (_, buf, pos, end) = self.read_slice(Tag.Boolean)
         if pos+1 != end:
             raise DecodeError('invalid boolean (%s bytes long)' % (end-pos,))
-        return buf[pos] != 0
+        return buf[pos] != 0  # ITU-T X.690 [8.2]
 
     def read_generalizedtime(self):
         """Reads a GeneralizedTime and returns it as a Python `datetime`.
@@ -592,7 +592,8 @@ class Oid:
         if isinstance(oid, tuple):
             self._arcs = oid
             self._der  = None
-        elif isinstance(oid, bytes) and oid[0] == 0x06:
+        elif isinstance(oid, bytes):
+            self._valid_header(oid)
             self._der  = oid
             self._arcs = None
         else:
@@ -652,16 +653,21 @@ class Oid:
             return b'\x06' + Encoder._encode_length(len(buf)) + buf
         else:
             return buf
-    
+
+    @staticmethod
+    def _valid_header(d):
+        if d[0] != 0x06:
+            raise DecodeError('Not a DER-encoded OID')
+        (olen, pos) = Decoder._decode_length(d, 1, len(d))
+        if pos + olen != len(d):
+            raise DecodeError('Incorrect OID header')
+        return pos
+
     @staticmethod
     def parse_der(d, tl=True):
         """Parse a DER-represented OID into a tuple of integers."""
         if tl:
-            if d[0] != 0x06:
-                raise DecodeError('Not a DER-encoded OID')
-            (olen, pos) = Decoder._decode_length(d, 1, len(d))
-            if pos + olen != len(d):
-                raise DecodeError('Incorrect OID header')
+            pos = Oid._valid_header(d)
         else:
             pos = 0
         try:

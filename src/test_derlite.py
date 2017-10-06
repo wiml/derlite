@@ -14,6 +14,8 @@ class Test (unittest.TestCase):
 
     def test_simple_values(self):
 
+        # Test round-tripping some simple values, and some of the
+        # decoder status methods.
         enc = derlite.Encoder()
         enc.write(1)
         enc.write(True)
@@ -30,6 +32,7 @@ class Test (unittest.TestCase):
 
     def test_simple_compound(self):
 
+        # A quick test of enter/leave
         enc = derlite.Encoder()
         enc.write(-128)
         enc.write( [ None ] )
@@ -54,6 +57,33 @@ class Test (unittest.TestCase):
         self.assertEqual(dec.read_integer(), 128)
         self.assertTrue(dec.eof())
 
+    def test_integers(self):
+        # Test correct encoding of integers of various widths
+        enc = derlite.Encoder()
+        enc.write(-129)
+        enc.write(128)
+        enc.write(-128)
+        enc.write(127)
+        enc.write(-1)
+        enc.write(0)
+        enc.write(1)
+        enc.write(-127)
+        enc.write(-256)
+        enc.write(255)
+
+        dec = self.around(enc,
+                          '0202FF7F 02020080 020180 02017F 0201FF 020100 020101 020181 0202FF00 020200FF')
+        self.assertEqual(dec.read_integer(), -129)
+        self.assertEqual(dec.read_integer(),  128)
+        self.assertEqual(dec.read_integer(), -128)
+        self.assertEqual(dec.read_integer(),  127)
+        self.assertEqual(dec.read_integer(),   -1)
+        self.assertEqual(dec.read_integer(),    0)
+        self.assertEqual(dec.read_integer(),    1)
+        self.assertEqual(dec.read_integer(), -127)
+        self.assertEqual(dec.read_integer(), -256)
+        self.assertEqual(dec.read_integer(),  255)
+
     def test_tagobject(self):
 
         self.assertEqual(repr(Tag.Sequence),
@@ -64,6 +94,7 @@ class Test (unittest.TestCase):
 
     def test_tagforms(self):
 
+        # Test encoding of tags
         enc = derlite.Encoder()
         enc.enter(31)
         enc.write_value(Tag(16, constructed=False, cls=Tag.Application),
@@ -90,6 +121,20 @@ class Test (unittest.TestCase):
         dec.leave()
         self.assertTrue(dec.eof())
         self.assertRaises(derlite.Error, dec.leave)
+
+    def test_set1(self):
+        # Simple test of set encoding: the DER encoder is responsible
+        # for ensuring the element ordering required by DER
+        enc = derlite.Encoder()
+        enc.write( set([ -1, 0, 1 ]) )
+        dec = self.around(enc, '3109 020100 020101 0201FF')
+
+        dec.enter(Tag.Set)
+        self.assertEqual(dec.read_integer(), 0)
+        self.assertEqual(dec.read_integer(), 1)
+        self.assertEqual(dec.read_integer(), -1)
+        dec.leave()
+        self.assertTrue(dec.eof())
 
 
 class TestDatetimes (unittest.TestCase):
@@ -165,6 +210,11 @@ class TestOids (unittest.TestCase):
         
         self.assertRaises(Exception,
                           derlite.Oid, 42)
+        self.assertRaises(derlite.DecodeError,
+                          derlite.Oid, b'\x03\x03\x55\x04\x03')
+        self.assertRaises(derlite.DecodeError,
+                          lambda x: derlite.Oid(x).arcs(),
+                          b'\x06\x02\x2A\x03\x01')
 
     def test_misc(self):
         self.assertEqual(str(derlite.Oid( (2,5,4,3) )),
