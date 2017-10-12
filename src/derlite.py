@@ -47,7 +47,7 @@ class Tag (tuple):
         ( 'ObjectIdentifier', 0x06 ),
         ( 'Enumerated', 0x0a ),
         ( 'UTCTime', 0x17 ),
-        ( 'GeneralizedTime', 0x1b ),
+        ( 'GeneralizedTime', 0x18 ),
 
         # The constructed types
         ( 'Sequence', 0x10 ),
@@ -532,21 +532,23 @@ class Decoder:
         return (length, pos)
 
     @staticmethod
-    def _decode_time(value):
-        if len(value) < 10:
-            raise DecodeError('Invalid GeneralizedTime')
+    def _decode_timezone(value):
         if value.endswith(b'Z'):
-            tz = datetime.timezone.utc
-            value = value[:-1]
-        elif value[-5] in b'+-':
+            return (value[:-1], datetime.timezone.utc)
+        elif len(value) > 5 and value[-5] in b'+-':
             tzdelta = datetime.timedelta(hours=int(value[-4:-2]),
                                          minutes=int(value[-2:]))
             if value[-5] == 0x2D:
                 tzdelta = -tzdelta
-            tz = datetime.timezone(tzdelta)
-            value = value[:-5]
+            return (value[:-5], datetime.timezone(tzdelta))
         else:
-            tz = None
+            return (value, None)
+
+    @staticmethod
+    def _decode_time(value):
+        if len(value) < 10:
+            raise DecodeError('Invalid GeneralizedTime')
+        (value, tz) = Decoder._decode_timezone(value)
 
         # The time string (with the timezone removed) has the format:
         # YYYYmmddHH[MM[SS[(.|,)ffffff]]]

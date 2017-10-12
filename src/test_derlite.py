@@ -158,22 +158,22 @@ class TestDatetimes (unittest.TestCase):
         dec = derlite.Decoder(der)
         got = dec.read_generalizedtime()
         self.assertEqual(dt, got)
-    
+
     def test_naive(self):
         self.roundtrip(datetime.datetime.utcfromtimestamp(0),
-                       b'\x1b\x0e19700101000000' )
+                       b'\x18\x0e19700101000000' )
         self.roundtrip(datetime.datetime.utcfromtimestamp(86460.75),
-                       b'\x1b\x1119700102000100.75' )
+                       b'\x18\x1119700102000100.75' )
 
     def test_utc(self):
         utc = datetime.timezone.utc
         self.roundtrip(datetime.datetime.fromtimestamp(0, utc),
-                       b'\x1b\x0f19700101000000Z' )
+                       b'\x18\x0f19700101000000Z' )
         self.roundtrip(datetime.datetime.fromtimestamp(1.25, utc),
-                       b'\x1b\x1219700101000001.25Z' )
-                       
-        dec = derlite.Decoder( b'\x1b\x0d198002010000Z' +
-                               b'\x1b\x0b1980020100Z' )
+                       b'\x18\x1219700101000001.25Z' )
+
+        dec = derlite.Decoder( b'\x18\x0d198002010000Z' +
+                               b'\x18\x0b1980020100Z' )
         self.assertEqual( datetime.datetime(1980, 2, 1, 0, 0, 0,
                                             tzinfo=utc),
                           dec.read_generalizedtime())
@@ -188,14 +188,14 @@ class TestDatetimes (unittest.TestCase):
 
         self.roundtrip(datetime.datetime(1980, 2, 29, 6, 45, 12,
                                          tzinfo=newfoundland),
-                       b'\x1b\x1319800229064512-0330')
+                       b'\x18\x1319800229064512-0330')
         self.roundtrip(datetime.datetime(1988, 3, 1, 0, 5, 15,
                                          microsecond=368100,
                                          tzinfo=london),
-                       b'\x1b\x1419880301000515.3681Z')
+                       b'\x18\x1419880301000515.3681Z')
         self.roundtrip(datetime.datetime(1992, 12, 31, 23, 30,
                                          tzinfo=newcaledonia),
-                       b'\x1b\x1319921231233000+1100')
+                       b'\x18\x1319921231233000+1100')
 
 class TestOids (unittest.TestCase):
 
