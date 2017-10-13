@@ -719,6 +719,7 @@ class OptionFlagSet:
         padding = buf[pos]
         pos += 1
         if padding > 7 or (pos == end and padding != 0):
+            # ITU-T X.690 [8.6.2.2], [8.6.2.3]
             raise derlite.DecodeError('Invalid BitString padding')
         bits_set = set()
         for byteIndex in range (0, end - pos):
@@ -737,6 +738,9 @@ class OptionFlagSet:
         (min_bytes, min_bits_in_last_byte) = divmod(self.min_width, 8)
         if min_bits_in_last_byte > 0:
             min_bytes += 1
+            max_padding_in_last_byte = 8 - min_bits_in_last_byte
+        else:
+            max_padding_in_last_byte = 0
         if min_bytes > 0:
             bytevalues.extend(0 for i in range(0, min_bytes))
         
@@ -752,31 +756,18 @@ class OptionFlagSet:
         # Compute the value of the padding octet
         if len(bytevalues) > 0:
             lastbyte = bytevalues[-1]
-            if lastbyte & 0x0F == 0:
-                if lastbyte & 0x3F == 0:
-                    if lastbyte & 0x7F == 0:
-                        padding = 7
-                    else:
-                        padding = 6
-                else:
-                    if lastbyte & 0x1F == 0:
-                        padding = 5
-                    else:
-                        padding = 4
+            if lastbyte == 0:
+                assert len(bytevalues) == min_bytes
+                padding = max_padding_in_last_byte
             else:
-                if lastbyte & 0x03 == 0:
-                    if lastbyte & 0x07 == 0:
-                        padding = 3
-                    else:
-                        padding = 2
-                else:
-                    if lastbyte & 0x01 == 0:
-                        padding = 1
-                    else:
-                        padding = 0
+                # old trick to extract the last 1-bit in the value
+                padding = {
+                    0x1: 0, 0x2: 1, 0x4: 2, 0x8: 3,
+                    0x10: 4, 0x20: 5, 0x40: 6, 0x80: 7,
+                }[ lastbyte & ~(lastbyte-1) ];
 
-            if len(bytevalues) == min_bytes and padding < min_bits_in_last_byte:
-                padding = 8 - min_bits_in_last_byte
+                if len(bytevalues) == min_bytes and padding > max_padding_in_last_byte:
+                    padding = max_padding_in_last_byte
             bytevalues.insert(0, padding)
             dervalue = bytes(bytevalues)
         else:

@@ -275,4 +275,33 @@ class BitSetTest (unittest.TestCase):
         self.roundtrip(fs, set(['alice']), '03 02 02 04')
         self.roundtrip(fs, set(['alice', 7]), '03 02 00 05')
         self.roundtrip(fs, set(['alice', 8]), '03 03 07 0480')
-    
+
+    @staticmethod
+    def expected_padding(bitwidth):
+        if bitwidth == 0:
+            return 0
+        else:
+            return 7 - ((bitwidth-1) % 8)
+
+    def test_widths(self):
+        for dw in (1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 30, 31, 32, 33):
+            fs = derlite.OptionFlagSet('dw',
+                                       ( ('a', 1),
+                                         ('b', dw-1),
+                                         ('c', dw) ),
+                                       min_width = dw)
+
+            b0 = fs.make_der([], tl=False)
+            self.assertEqual(b0[0], self.expected_padding(dw))
+
+            b1 = fs.make_der([ 'a' ], tl=False)
+            self.assertEqual(b1[0], self.expected_padding(max(dw,2)))
+            self.assertEqual(b1[1], 0x40)
+
+            b2 = fs.make_der([ 'b' ], tl=False)
+            self.assertEqual(b2[0], self.expected_padding(dw))
+            self.assertEqual(b2[-1], 1 << (7 - ((dw-1)%8)))
+
+            b3 = fs.make_der([ 'c' ], tl=False)
+            self.assertEqual(b3[0], self.expected_padding(dw+1))
+            self.assertEqual(b3[-1], 1 << (7 - (dw%8)))
