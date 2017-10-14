@@ -646,6 +646,11 @@ class Oid:
             raise TypeError('addend must be a tuple of integers')
         return self.__class__(self.arcs() + r)
 
+    @classmethod
+    def decode_der(kls, decoder):
+        body = decoder.read_octet_string(tag=Tag.ObjectIdentifier)
+        return kls(kls.parse_der(body, tl=False))
+    
     @staticmethod
     def make_der(arcs, tl=True):
         """Construct the DER representation of an OID, given as a sequence of
