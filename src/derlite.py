@@ -29,7 +29,7 @@ Utilities for constructing and parsing DER-encoded data.
 
 """
 
-import collections, datetime, io
+import collections, datetime, io, re
 
 __version__ = "0.1.0"
 
@@ -54,13 +54,23 @@ class Tag (tuple):
         ( 'Set', 0x11 ),
 
         # The mess of character-string types
-        ( 'UTF8String', 0x0c ),
-        ( 'PrintableString', 0x13 ),
-        ( 'IA5String', 0x16 ),
-        ( 'VisibleString', 0x1a ),
-        ( 'GeneralString', 0x1b ),
-        ( 'UniversalString', 0x1c ),  # UTF-16
+        ( 'IA5String', 0x16 ),        # ASCII, approximately
+        ( 'UTF8String', 0x0c ),       # UTF-8
+        ( 'UniversalString', 0x1c ),  # UCS-32
         ( 'BMPString', 0x1e ),        # UCS-16
+        ( 'NumericString', 0x12 ),    # ASCII subset
+        ( 'PrintableString', 0x13 ),  # ASCII subset
+        ( 'VisibleString', 0x1a ),    # ASCII subset
+        
+        # The following are all based on ISO-2022, which uses escape
+        # sequences to switch into various other character sets.
+        # The TeletexString and VideotexString encodings allow the
+        # use of ISO-2022 escape sequences, but are defined to start out
+        # with a particular set of character sets already invoked.
+        ( 'TeletexString', 0x14 ),    # CCITT T.61, or ISO-IR 102+103
+        ( 'VideotexString', 0x15 ),   # CCITT T.101
+        ( 'GraphicString', 0x19 ),
+        ( 'GeneralString', 0x1b ),
     )
 
     Universal = 0x00
@@ -99,7 +109,21 @@ class Tag (tuple):
 for (n, v) in Tag._universal_tags:
     setattr(Tag, n, Tag(tag=v, constructed = (v in (0x11, 0x10)), cls = Tag.Universal))
 del n, v
-    
+
+string_tags = (
+    Tag.IA5String,
+    Tag.UTF8String,
+    Tag.UniversalString,
+    Tag.BMPString,
+    Tag.NumericString,
+    Tag.PrintableString,
+    Tag.VisibleString,
+    Tag.TeletexString,
+    Tag.VideotexString,
+    Tag.GraphicString,
+    Tag.GeneralString
+)
+
 class Error(Exception):
     pass
 
@@ -386,6 +410,77 @@ class Decoder:
             raise DecodeError('invalid boolean (%s bytes long)' % (end-pos,))
         return buf[pos] != 0  # ITU-T X.690 [8.2]
 
+    def read_string(self):
+        """Reads any of the common string types and returns it as a Python
+        unicode string.
+
+        For details, see `decode_string()`."""
+        (tag, buf, pos, end) = self.read_slice()
+        if tag.cls != Tag.Universal or tag.constructed or tag.tag not in self._string_mappings:
+            raise DecodeError('expecting a string type, found %s' % (peeked,))
+        return self.decode_string(buf[pos:end], tag.tag)
+
+    _string_mappings = {
+        12: 'UTF-8', 30: 'UTF-16-BE', 28: 'UTF-32-BE',
+        18: 'ascii', 19: 'ascii', 22: 'ascii', 26: 'ascii',
+        20: 'T.61', 21: 'Videotex', 25: 'ISO-2022', 27: 'ISO-2022',
+    }
+    _t102_ascii_differences = re.compile(b'[^\\040\\041\\042\\045-\\176]') # Only for decoding, not for encoding!
+    def decode_string(self, buf, tagnumber):
+        """Decodes a string according to the syntax indicated by the tag
+        number.
+
+        TeletexString, VideotexString, PrintableString and
+        GeneralString may require the availability of codecs for
+        'Teletex' or 'ISO-2022'. For strings containing only ASCII
+        characters, however, the decoder will simply use the ASCII
+        codec.
+
+        This method can be overridden in order to provide non-
+        standard behavior (for example, if you need to be compatible with
+        systems which put Latin-1 text in a TeletexString).
+
+        """
+        enc = self._string_mappings[tagnumber]
+        if enc == 'T.61':
+            # Teletex / T.61 / ISO-IR-102 string encoding.
+            if 0x1B in buf:
+                # Possibly contains invocation of other character sets.
+                # Use the full ISO-2022 decoder, after setting up the
+                # selection state:  G0 <- IR-102, G2 <- IR-103, C0 <- 106, C1 <- 107
+                buf = b'\x1B\x28\x75\x0F\x1B\x2A\x76\x1B\x7D\x1B\x21\x45\x1B\x22\x48' + buf # T.61 initial selections
+                enc = 'ISO-2022'
+            elif self._t102_ascii_differences.search(buf) is None:
+                # Common case: Teletex encoding of an ASCII string.
+                enc = 'ascii'
+        elif enc == 'Videotex':
+            # Videotex / T.101 / ISO-IR-131,145,108,et al
+            if self._t102_ascii_differences.search(buf) is None:
+                # No bytes requiring a full Videotex decoder
+                # (which is good because we probably don't have one).
+                enc = 'ascii'
+            else:
+                #  G0 <- IR-102, C0 <- 1, C1 <- 73
+                buf = b'\x1B\x28\x75\x0F\x1B\x21\x40\x1B\x22\x41' + buf # T.101 initial selections
+                enc = 'ISO-2022'
+        elif enc == 'ISO-2022':
+            # ISO-2022 is not really an encoding itself, it's a set of
+            # escape sequences for invoking other known character sets
+            # and encodings like GB2312, the ISO-Latin sets,
+            # JIS-X-0208, etc. If there are no escape (or delete)
+            # bytes in the string, we can safely interpret it as
+            # ASCII.
+            if 0x1B not in buf and 0x7F not in buf:
+                enc = 'ascii'
+            else:
+                # Otherwise, we would need to parse it for escape sequences
+                # and dispatch to individual codecs. Python doesn't have a
+                # general ISO-2022 decoder, oddly! But if someone wants one they
+                # can install one.
+                buf = b'\x1B\x28\x42\x0F\x1B\x21\x40' + buf
+
+        return buf.decode(enc)
+    
     def read_generalizedtime(self):
         """Reads a GeneralizedTime and returns it as a Python `datetime`.
 

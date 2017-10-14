@@ -1,9 +1,16 @@
 
 import derlite
-import datetime
-import unittest
 from derlite import Tag
 
+import codecs, datetime, unittest
+
+try:
+    codecs.lookup('Teletex')
+    teletex_available = True
+except LookupError:
+    teletex_available = False
+teletex_available = True
+    
 class Test (unittest.TestCase):
 
     def around(self, enc, der):
@@ -146,6 +153,37 @@ class Test (unittest.TestCase):
         enc.write_set( [ None, False, [], derlite.Oid((1, 10)), True ] )
         dec = self.around(enc, '310D 010100 0101FF 0500 060132 3000')
 
+    def test_strings_1(self):
+        # Test decoding some strings.
+
+        # IA5String and UTF8String
+        dec = derlite.Decoder(b'\x16\x06flambe\x0c\x07flamb\xC3\xA9')
+        self.assertEqual(dec.read_string(), 'flambe')
+        self.assertEqual(dec.read_string(), 'flamb\u00E9')
+        self.assertTrue(dec.eof())
+
+        # PrintableString and (simple) GeneralString.
+        dec = derlite.Decoder(b'\x13\x05hello\x1B\x06world!')
+        self.assertEqual(dec.read_string(), 'hello')
+        self.assertEqual(dec.read_string(), 'world!')
+        self.assertTrue(dec.eof())
+
+    def test_strings_teletex_ascii(self):
+        dec = derlite.Decoder(b'\x14\x1FSome parts of T.61 match ASCII.')
+        self.assertEqual(dec.read_string(), 'Some parts of T.61 match ASCII.')
+        self.assertTrue(dec.eof())
+
+    @unittest.skipUnless(teletex_available,
+                         "Teletex/T.61 codec is not available.")
+    def test_strings_teletex(self):
+        dec = derlite.Decoder(b'\x14\x03See\x14\x07\xECe Olde' +
+                              b'\x14\x28\xABM\xC8uller, Fran\xCBcois, \xEArsted, l\'H\xC3opital\xBB' +
+                              b'\x14\x03(\xA4)')
+        self.assertEqual(dec.read_string(), 'See')
+        self.assertEqual(dec.read_string(), '\u00DEe Olde')
+        self.assertEqual(dec.read_string(), '\u00ABM\u00FCller, Fran\u00E7ois, \u0152rsted, l\'H\u00F4pital\u00BB')
+        self.assertEqual(dec.read_string(), '($)')
+        self.assertTrue(dec.eof())
 
 class TestDatetimes (unittest.TestCase):
 
