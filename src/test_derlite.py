@@ -9,7 +9,6 @@ try:
     teletex_available = True
 except LookupError:
     teletex_available = False
-teletex_available = True
     
 class Test (unittest.TestCase):
 

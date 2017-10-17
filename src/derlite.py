@@ -417,7 +417,7 @@ class Decoder:
         For details, see `decode_string()`."""
         (tag, buf, pos, end) = self.read_slice()
         if tag.cls != Tag.Universal or tag.constructed or tag.tag not in self._string_mappings:
-            raise DecodeError('expecting a string type, found %s' % (peeked,))
+            raise DecodeError('expecting a string type, found %s' % (tag,))
         return self.decode_string(buf[pos:end], tag.tag)
 
     _string_mappings = {
@@ -815,12 +815,12 @@ class OptionFlagSet:
     def decode_der(self, decoder):
         ( _, buf, pos, end ) = decoder.read_slice(Tag.BitString)
         if pos+1 > end:
-            raise derlite.DecodeError('Truncated BitString')
+            raise DecodeError('Truncated BitString')
         padding = buf[pos]
         pos += 1
         if padding > 7 or (pos == end and padding != 0):
             # ITU-T X.690 [8.6.2.2], [8.6.2.3]
-            raise derlite.DecodeError('Invalid BitString padding')
+            raise DecodeError('Invalid BitString padding')
         bits_set = set()
         for byteIndex in range (0, end - pos):
             b = buf[pos + byteIndex]
