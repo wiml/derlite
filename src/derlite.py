@@ -249,6 +249,12 @@ class Encoder:
         self._emit_tag_length(tag, len(der))
         self.fragments.write(der)
 
+    def write_raw_bytes(self, nonder):
+        """Write bytes into the output stream, without any DER tagging.
+        This can be used for an object that is already tagged, or
+        for formats which include non-DER data in a DER container."""
+        self.fragments.write(nonder)
+
     def write_set(self, values):
         """Write a set of objects (a constructed object with tag SET).
 
@@ -396,6 +402,18 @@ class Decoder:
         self._peeked_tag = None
         return (peeked, self.data, pos, pos+length)
 
+    def read_raw_bytes(self, bytecount):
+        """Read bytes from the input without interpreting any tags.  This can
+        be used for formats which include non-DER data in a DER
+        container (I'm looking at you, GSSAPI).
+        """
+        endpos = self._position + bytecount
+        if endpos > self._end:
+            raise DecodeError('object extends %s bytes past end of buffer' % (endpos - self._end,))
+        value = self.data[self._position : endpos]
+        self._position = endpos
+        return value
+    
     def read_integer(self):
         """Reads an INTEGER and returns it as a Python `int`."""
         buf = self.read_octet_string(Tag.Integer)
