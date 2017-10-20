@@ -103,11 +103,11 @@ class Test (unittest.TestCase):
         # Test encoding of tags
         enc = derlite.Encoder()
         enc.enter(31)
-        enc.write_value(Tag(16, constructed=False, cls=Tag.Application),
-                        b'      ')
+        enc.write_tagged_bytes(Tag(16, constructed=False, cls=Tag.Application),
+                               b'      ')
         ablob = b'ABCDE' * 100
-        enc.write_value(Tag(1000, constructed=False, cls=Tag.Context),
-                        ablob)
+        enc.write_tagged_bytes(Tag(1000, constructed=False, cls=Tag.Context),
+                               ablob)
         enc.leave()
 
         dec = self.around(enc,

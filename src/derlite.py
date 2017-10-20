@@ -244,7 +244,7 @@ class Encoder:
         else:
             raise TypeError('No default encoding for type %r' % (type(value).__name__,))
 
-    def write_value(self, tag, der):
+    def write_tagged_bytes(self, tag, der):
         """Write a tag with arbitrary contents (supplied as a bytes object)."""
         self._emit_tag_length(tag, len(der))
         self.fragments.write(der)
