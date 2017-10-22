@@ -172,7 +172,7 @@ class Encoder:
 
     def leave(self):
         """Finish constructing a constructed type, balancing an earlier
-        call to enter().
+        call to `enter()`.
         """
         if len(self._stack) == 0:
             raise Error('Tag stack is empty.')

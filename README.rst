@@ -5,7 +5,7 @@ Overview
 DERlite is a encoder and parser for DER-encoded (and some BER-encoded) ASN.1 data.
 
 DERlite requires Python 3.5 (particularly for some features of the
-``bytes`` class).
+``bytes`` and ``int`` classes).
 It has no hard dependencies beyond the standard library,
 but requires T.61 and ISO-2022 codecs to be available in order
 to decode all valid string types.
@@ -25,8 +25,6 @@ Features
 Missing Features
 ================
 
-There's no support for implicit tagging.
-
 Datetimes always use GeneralizedTime rather than UTCTime. This is
 usually preferable, except that some specifications such as PKIX
 require the use of UTCTime for dates during the late 20th century.
@@ -36,17 +34,6 @@ indefinite-length encodings and constructed primitives.
 
 The entire encoded object must fit in a ``bytes`` object;
 there is no support for streaming either during encoding or decoding.
-
-Parsing structures with optionals, explicit tags, etc., requires
-fairly verbose and tedious code. This could be improved.
-
-Encoding unicode strings correctly is extremely finicky, since each
-specification has a different set of rules about which of the many
-string types can be used, and each implementation community has a
-different set of unwritten rules required for interoperability. It
-would be nice to be able to bundle these rules up into an object or
-class which each user of DERlite can create for their particular
-needs.
 
 Usage Example
 =============
