@@ -144,7 +144,7 @@ class Encoder:
         self._fragments = io.BytesIO()
         self._pending_implicit = None
 
-    def getvalue(self):
+    def getvalue(self) -> bytes:
         """Return the accumulated encoded contents.
 
         It is an error to call this when any constructed types have
@@ -255,12 +255,12 @@ class Encoder:
         else:
             raise TypeError('No default encoding for type %r' % (type(value).__name__,))
 
-    def write_tagged_bytes(self, tag, der):
+    def write_tagged_bytes(self, tag: Tag, der: bytes):
         """Write a tag with arbitrary contents (supplied as a bytes object)."""
         self._emit_tag_length(tag, len(der))
         self._fragments.write(der)
 
-    def write_raw_bytes(self, nonder):
+    def write_raw_bytes(self, nonder: bytes):
         """Write bytes into the output stream, without any DER tagging.
         This can be used for an object that is already tagged, or
         for formats which include non-DER data in a DER container."""
@@ -317,7 +317,7 @@ class Encoder:
             self._fragments.write(bytes(buf))
 
     @staticmethod
-    def _encode_length(length):
+    def _encode_length(length) -> bytes:
         if length < 128:
             return bytes([length])
         else:
@@ -350,7 +350,7 @@ class Encoder:
 class Decoder:
     """A decoder of DER and (some) BER data."""
 
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         if not isinstance(data, bytes):
             raise TypeError('Expecting bytes instance.')
         self.data = data
@@ -359,7 +359,7 @@ class Decoder:
         self._end = len(data)
         self._peeked_tag = None
 
-    def peek(self):
+    def peek(self) -> Tag:
         """Returns the current ASN.1 tag as a Tag object, or None.
 
         Returns None at the end of input or at the end of a constructed object
@@ -378,7 +378,7 @@ class Decoder:
             self._peeked_tag = self._read_tag()
         return self._peeked_tag
 
-    def read_octet_string(self, tag=Tag.OctetString):
+    def read_octet_string(self, tag=Tag.OctetString) -> bytes:
         """Reads an OCTET STRING from the buffer, returning its content octets as
         a bytes object, or raising DecodeError on failure.
 
@@ -422,7 +422,7 @@ class Decoder:
         self._peeked_tag = None
         return (peeked, self.data, pos, pos+length)
 
-    def read_raw_bytes(self, bytecount):
+    def read_raw_bytes(self, bytecount: int) -> bytes:
         """Read bytes from the input without interpreting any tags.  This can
         be used for formats which include non-DER data in a DER
         container (I'm looking at you, GSSAPI).
@@ -434,21 +434,21 @@ class Decoder:
         self._position = endpos
         return value
     
-    def read_integer(self):
+    def read_integer(self) -> int:
         """Reads an INTEGER and returns it as a Python `int`."""
         buf = self.read_octet_string(Tag.Integer)
         if len(buf) == 0:
             return 0
         return int.from_bytes(buf, 'big', signed=True)
 
-    def read_boolean(self):
+    def read_boolean(self) -> bool:
         """Reads a BOOLEAN and returns it as a Python `bool`."""
         (_, buf, pos, end) = self.read_slice(Tag.Boolean)
         if pos+1 != end:
             raise DecodeError('invalid boolean (%s bytes long)' % (end-pos,))
         return buf[pos] != 0  # ITU-T X.690 [8.2]
 
-    def read_string(self):
+    def read_string(self) -> str:
         """Reads any of the common string types and returns it as a Python
         unicode string.
 
@@ -464,7 +464,7 @@ class Decoder:
         20: 'T.61', 21: 'Videotex', 25: 'ISO-2022', 27: 'ISO-2022',
     }
     _t102_ascii_differences = re.compile(b'[^\\040\\041\\042\\045-\\176]') # Only for decoding, not for encoding!
-    def decode_string(self, buf, tagnumber):
+    def decode_string(self, buf: bytes, tagnumber: int) -> str:
         """Decodes a string according to the syntax indicated by the tag
         number.
 
@@ -530,7 +530,7 @@ class Decoder:
         value = self.read_octet_string(Tag.GeneralizedTime)
         return self._decode_time(value)
 
-    def eof(self):
+    def eof(self) -> bool:
         """Test whether there is more data to be decoded.
 
         Returns True at the end of input, or at the end of a
@@ -603,7 +603,7 @@ class Decoder:
         else:
             raise DecodeError('Expected %s, but found %s' % (tag, peeked))
     
-    def leave(self, require_end=True):
+    def leave(self, require_end=True) -> None:
         """Leaves the constructed type that was most recently enter()ed.
 
         If `require_end` is True, this will raise a DecodeError if there are more objects
@@ -630,7 +630,7 @@ class Decoder:
                                cls=inner.cls)
         return peeked
         
-    def _read_tag(self):
+    def _read_tag(self) -> Tag:
         """Read a tag from the input."""
         try:
             byte = self.data[self._position]
@@ -654,7 +654,7 @@ class Decoder:
         return Tag(tag=nr, constructed=constructed, cls=cls)
 
     @staticmethod
-    def _decode_length(buf, pos, end):
+    def _decode_length(buf: bytes, pos: int, end: int):
         """Parse a tag's length field from ``buf[pos:end]``"""
         if not (pos < end):
             raise DecodeError('Truncated object')
@@ -675,7 +675,7 @@ class Decoder:
         return (length, pos)
 
     @staticmethod
-    def _decode_timezone(value):
+    def _decode_timezone(value: bytes):
         if value.endswith(b'Z'):
             return (value[:-1], datetime.timezone.utc)
         elif len(value) > 5 and value[-5] in b'+-':
@@ -688,7 +688,7 @@ class Decoder:
             return (value, None)
 
     @staticmethod
-    def _decode_time(value):
+    def _decode_time(value: bytes) -> datetime.datetime:
         if len(value) < 10:
             raise DecodeError('Invalid GeneralizedTime')
         (value, tz) = Decoder._decode_timezone(value)
@@ -757,7 +757,7 @@ class Oid:
         else:
             raise ValueError('invalid OID')
 
-    def as_der(self):
+    def as_der(self) -> bytes:
         "Returns the DER representation of the receiver."
         if self._der is None:
             self._der = self.make_der(self._arcs)
@@ -795,7 +795,7 @@ class Oid:
         return kls(kls.parse_der(body, tl=False))
     
     @staticmethod
-    def make_der(arcs, tl=True):
+    def make_der(arcs, tl=True) -> bytes:
         """Construct the DER representation of an OID, given as a sequence of
         integers. If tl is False, the tag and length are not included and only
         the raw (inner) representation is returned.
@@ -818,7 +818,7 @@ class Oid:
             return encoded
 
     @staticmethod
-    def _valid_header(d):
+    def _valid_header(d: bytes) -> int:
         if d[0] != 0x06:
             raise DecodeError('Not a DER-encoded OID')
         (olen, pos) = Decoder._decode_length(d, 1, len(d))
@@ -827,7 +827,7 @@ class Oid:
         return pos
 
     @staticmethod
-    def parse_der(d, tl=True):
+    def parse_der(d: bytes, tl=True):
         """Parse a DER-represented OID into a tuple of integers."""
         if tl:
             pos = Oid._valid_header(d)
@@ -879,7 +879,7 @@ class OptionFlagSet:
                         bits_set.add(self.bit_names.get(bitIndex, bitIndex))
         return bits_set
 
-    def make_der(self, bits_set, tl=False):
+    def make_der(self, bits_set, tl=False) -> bytes:
 
         bytevalues = []
 
