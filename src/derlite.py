@@ -29,9 +29,10 @@ Utilities for constructing and parsing DER-encoded data.
 
 """
 
-import collections, datetime, io, re
+__version__ = "0.2.0"
+__docformat__ = 'reStructuredText'
 
-__version__ = "0.1.0"
+import datetime, io, re
 
 class Tag (tuple):
     """A named tuple to represent ASN.1 tags and to hold tag constants."""
@@ -139,8 +140,9 @@ class Encoder:
     """
 
     def __init__(self):
-        self.stack = []
-        self.fragments = io.BytesIO()
+        self._stack = []
+        self._fragments = io.BytesIO()
+        self._pending_implicit = None
 
     def getvalue(self):
         """Return the accumulated encoded contents.
@@ -149,9 +151,9 @@ class Encoder:
         been entered but not yet closed.
 
         """
-        if len(self.stack) > 0:
+        if len(self._stack) > 0 or self._pending_implicit is not None:
             raise Error('Unclosed constructed type')
-        return self.fragments.getvalue()
+        return self._fragments.getvalue()
         
     def enter(self, nr):
         """Begin constructing a constructed type. Calls to enter() must
@@ -162,25 +164,33 @@ class Encoder:
             interpreted as a tag value in the Context class.
         """
         if isinstance(nr, int):
-            cls = Tag.Context
+            self._emit_tag(nr, True, Tag.Context)
         else:
-            cls = nr.cls
-            nr = nr.tag
-        self._emit_tag(nr, True, cls)
-        self.stack.append(self.fragments)
-        self.fragments = io.BytesIO()
+            self._emit_tag(nr.tag, True, nr.cls)
+        self._stack.append(self._fragments)
+        self._fragments = io.BytesIO()
 
     def leave(self):
         """Finish constructing a constructed type, balancing an earlier
         call to enter().
         """
-        if len(self.stack) == 0:
+        if len(self._stack) == 0:
             raise Error('Tag stack is empty.')
-        value = self.fragments.getbuffer()
-        self.fragments = self.stack.pop()
-        self.fragments.write(self._encode_length(len(value)))
-        self.fragments.write(value)
+        if self._pending_implicit is not None:
+            raise Error('Unfinished implicitly tagged object.')
+        value = self._fragments.getbuffer()
+        self._fragments = self._stack.pop()
+        self._fragments.write(self._encode_length(len(value)))
+        self._fragments.write(value)
 
+    def enter_implicit_tag(self, nr):
+        # If we already have a pending implicit tag, don't overwrite it:
+        # in a situation where there are multiple implicit tags applied to
+        # an object, only the outermost one actually appears in the DER
+        # encoding.
+        if self._pending_implicit is None:
+            self._pending_implicit = Tag(nr, True, Tag.Context) if isinstance(nr, int) else nr
+        
     def write(self, value):
         """Write one Python object to the buffer.
 
@@ -203,12 +213,13 @@ class Encoder:
         if hasattr(value, 'encode_der'):
             value.encode_der(self)
         elif hasattr(value, 'as_der'):
-            self.fragments.write(value.as_der())
+            assert self._pending_implicit is None
+            self._fragments.write(value.as_der())
         elif value is None:
             self._emit_tag_length(Tag.Null, 0)
         elif isinstance(value, bool):
             self._emit_tag_length(Tag.Boolean, 1)
-            self.fragments.write( b'\xFF' if value else b'\x00' )
+            self._fragments.write( b'\xFF' if value else b'\x00' )
         elif isinstance(value, int):
             if value == 0:
                 encoded = b'\x00'  # Special case.
@@ -226,7 +237,7 @@ class Encoder:
                 encoded = value.to_bytes(bytecount, 'big', signed=True)
                 assert len(encoded) == bytecount
             self._emit_tag_length(Tag.Integer, len(encoded))
-            self.fragments.write(encoded)
+            self._fragments.write(encoded)
         elif isinstance(value, (list, tuple)):
             self.enter(Tag.Sequence)
             for elt in value:
@@ -236,26 +247,27 @@ class Encoder:
             self.write_set(value)
         elif isinstance(value, bytes):
             self._emit_tag_length(Tag.OctetString, len(value))
-            self.fragments.write(value)
+            self._fragments.write(value)
         elif isinstance(value, datetime.datetime):
             gt = self._encode_generalizedtime(value)
             self._emit_tag_length(Tag.GeneralizedTime, len(gt))
-            self.fragments.write(gt)
+            self._fragments.write(gt)
         else:
             raise TypeError('No default encoding for type %r' % (type(value).__name__,))
 
     def write_tagged_bytes(self, tag, der):
         """Write a tag with arbitrary contents (supplied as a bytes object)."""
         self._emit_tag_length(tag, len(der))
-        self.fragments.write(der)
+        self._fragments.write(der)
 
     def write_raw_bytes(self, nonder):
         """Write bytes into the output stream, without any DER tagging.
         This can be used for an object that is already tagged, or
         for formats which include non-DER data in a DER container."""
-        self.fragments.write(nonder)
+        assert self._pending_implicit is None
+        self._fragments.write(nonder)
 
-    def write_set(self, values):
+    def write_set(self, values, pythontype=None):
         """Write a set of objects (a constructed object with tag SET).
 
         `values` may be any iterable, generator, sequence, etc., containing
@@ -267,34 +279,42 @@ class Encoder:
         members = list()
         content_length = 0
         for elt in values:
-            self.write(elt)
-            fragment = self.fragments.getvalue()
-            self.fragments = io.BytesIO()
+            if pythontype is not None:
+                self.write_value_of_type(elt, pythontype)
+            else:
+                self.write(elt)
+            fragment = self._fragments.getvalue()
+            self._fragments = io.BytesIO()
             content_length += len(fragment)
             members.append(fragment)
         members.sort() # TODO: verify proper ordering
-        self.fragments = self.stack.pop()
-        self.fragments.write(self._encode_length(content_length))
+        self._fragments = self._stack.pop()
+        self._fragments.write(self._encode_length(content_length))
         for elt in members:
-            self.fragments.write(elt)
+            self._fragments.write(elt)
 
     def _emit_tag_length(self, tag, length):
         self._emit_tag(tag.tag,
                        tag.constructed,
                        tag.cls)
-        self.fragments.write(self._encode_length(length))
+        self._fragments.write(self._encode_length(length))
 
     def _emit_tag(self, tagnr, constructed, cls):
+        if self._pending_implicit is not None:
+            # Write the implicit tag instead of the actual one. But use the
+            # constructed flag from the real tag.
+            tagnr, cls = self._pending_implicit.tag, self._pending_implicit.cls
+            self._pending_implicit = None
         t0 = (0x20 if constructed else 0) | cls
         if tagnr < 0x1F:
-            self.fragments.write(bytes([ tagnr | t0 ]))
+            self._fragments.write(bytes([ tagnr | t0 ]))
         else:
             buf = [ 0x1F | t0 , tagnr & 0x7F ]
             tagnr >>= 7
             while tagnr != 0:
                 buf.insert(1, (tagnr & 0x7F) | 0x80)
                 tagnr >>= 7
-            self.fragments.write(bytes(buf))
+            self._fragments.write(bytes(buf))
 
     @staticmethod
     def _encode_length(length):
@@ -600,6 +620,16 @@ class Decoder:
         self._end = new_end
         self._peeked_tag = None
 
+    def enter_implicit_tag(self, outer, inner, optional=False):
+        peeked = self.expect_tag(outer, optional=optional)
+        if peeked is None:
+            return None
+        assert self._peeked_tag is not None
+        self._peeked_tag = Tag(tag=inner.tag,
+                               constructed=self._peeked_tag.constructed,
+                               cls=inner.cls)
+        return peeked
+        
     def _read_tag(self):
         """Read a tag from the input."""
         try:
@@ -781,11 +811,11 @@ class Oid:
             while arc:
                 buf.insert(loc, (arc & 0x7F) | 0x80)
                 arc = arc >> 7
-        buf = bytes(buf)
+        encoded = bytes(buf)
         if tl:
-            return b'\x06' + Encoder._encode_length(len(buf)) + buf
+            return b'\x06' + Encoder._encode_length(len(encoded)) + encoded
         else:
-            return buf
+            return encoded
 
     @staticmethod
     def _valid_header(d):
