@@ -293,6 +293,27 @@ class Encoder:
         for elt in members:
             self._fragments.write(elt)
 
+    def write_value_of_type(self, value, pythontype):
+        """Write a value of a given ASN.1 type. The type argument should be an
+        object supporting the `encode_value()` informal protocol method, or a
+        tuple of such objects. Otherwise, this simply calls `write(value)`,
+        which writes the value based on its runtime type.
+
+        Writing a tuple is simply a shortcut for writing its elements: it
+        does not enclose them within a SEQUENCE or other tag. For that,
+        use a `Structure` or `SequenceOf` instance as the type argument.
+        """
+
+        fieldwriter = getattr(pythontype, 'encode_value', None)
+        if fieldwriter is not None:
+            fieldwriter(self, value)
+        elif isinstance(pythontype, tuple):
+            assert len(value) == len(pythontype)
+            for ix in range(0, len(pythontype)):
+                self.write_value_of_type(value[ix], pythontype[ix])
+        else:
+            self.write(value)
+    
     def _emit_tag_length(self, tag, length):
         self._emit_tag(tag.tag,
                        tag.constructed,
@@ -457,6 +478,45 @@ class Decoder:
         if tag.cls != Tag.Universal or tag.constructed or tag.tag not in self._string_mappings:
             raise DecodeError('expecting a string type, found %s' % (tag,))
         return self.decode_string(buf[pos:end], tag.tag)
+
+    def read_type(self, pythontype):
+        """Read an object of a specified type. The type argument may be
+        an object that implements `decode_der()`; or one of the built-in
+        Python types bool, int, bytes, datetime, or str; or a tuple
+        of types (see `Encoder.write_value_of_type()`).
+
+        The type argument does not need to be a Python type or class; it
+        may be an instance of a class such as `Structure` or `Optional`."""
+        if hasattr(pythontype, 'decode_der'):
+            return pythontype.decode_der(self)
+        elif isinstance(pythontype, tuple):
+            values = list()
+            for itemtype in pythontype:
+                item = self.read_type(itemtype)
+                values.append(item)
+            return tuple(values)
+        elif pythontype == bool:
+            return self.read_boolean()
+        elif issubclass(pythontype, int):
+            return pythontype(self.read_integer())
+        elif issubclass(pythontype, bytes):
+            return pythontype(self.read_octet_string())
+        elif pythontype == datetime.datetime:
+            return self.read_generalizedtime()
+        elif pythontype == str:
+            return self.read_string()
+        else:
+            raise TypeError("Don't know how to decode BER for type %s" % (pythontype,))
+
+    @classmethod
+    def check_readable_type(self, pythontype) -> bool:
+        """Tests whether an object is usable as the type argument to read_type().
+        If not, raises an exception."""
+        if hasattr(pythontype, 'decode_der') or \
+           (pythontype in ( bool, datetime.datetime, str )) or \
+           issubclass(pythontype, (int, bytes)):
+            return
+        raise TypeError('%s is not a der-decodable type' % (pythontype,))
 
     _string_mappings = {
         12: 'UTF-8', 30: 'UTF-16-BE', 28: 'UTF-32-BE',
@@ -793,6 +853,10 @@ class Oid:
     def decode_der(kls, decoder):
         body = decoder.read_octet_string(tag=Tag.ObjectIdentifier)
         return kls(kls.parse_der(body, tl=False))
+
+    @staticmethod
+    def decodes_der_tag(tag):
+        return tag == Tag.ObjectIdentifier
     
     @staticmethod
     def make_der(arcs, tl=True) -> bytes:
@@ -925,4 +989,153 @@ class OptionFlagSet:
             return b'\x03' + Encoder._encode_length(len(dervalue)) + dervalue
         else:
             return dervalue
+
+class SequenceOf:
+    def __init__(self, itemtype, tag=Tag.Sequence):
+        Decoder.check_readable_type(itemtype)
+        self.tag = tag
+        self.itemtype = itemtype
+        self.has_writer = hasattr(itemtype, 'encode_value')
+
+    def decodes_der_tag(self, tag: Tag) -> bool:
+        return tag == self.tag
+
+    def decode_der(self, decoder):
+        decoder.enter(self.tag)
+        items = list()
+        while not decoder.eof():
+            item = self.itemtype.decode_der(decoder)
+            items.append(item)
+        decoder.leave()
+        return items
+
+    def encode_value(self, encoder, value):
+        encoder.enter(self.tag)
+        for item in value:
+            if self.has_writer:
+                self.itemtype.encode_value(encoder, item)
+            else:
+                encoder.write(item)
+        encoder.leave()
+
+class Structure:
+    def __init__(self, fields, tag=Tag.Sequence):
+        fields = tuple(fields)
+        for field in fields:
+            Decoder.check_readable_type(field)
+        self.tag = tag
+        self.fields = fields
+        self.fieldwriters = tuple(getattr(f, 'encode_value', None) for f in fields)
+
+    def decodes_der_tag(self, tag: Tag) -> bool:
+        return tag == self.tag
+
+    def decode_der(self, decoder):
+        decoder.enter(self.tag)
+        items = list()
+        for itemtype in self.fields:
+            item = decoder.read_type(itemtype)
+            items.append(item)
+        decoder.leave()
+        return tuple(items)
+
+    def encode_value(self, encoder, value):
+        if len(value) != len(self.fields):
+            raise ValueError('Mismatched structure lengths')
+        encoder.enter(self.tag)
+        for ix in range(0, len(self.fields)):
+            if self.fieldwriters[ix] is not None:
+                self.fieldwriters[ix](encoder, value[ix])
+            else:
+                encoder.write(value[ix])
+        encoder.leave()
+
+class ExplicitlyTagged:
+    def __init__(self, tag, itemtype):
+        if isinstance(tag, int):
+            tag = Tag(tag, True, Tag.Context)
+        Decoder.check_readable_type(itemtype)
+        self.tag = tag
+        self.itemtype = itemtype
+        self.has_writer = hasattr(itemtype, 'encode_value')
+
+    def decodes_der_tag(self, tag: Tag) -> bool:
+        return tag == self.tag
+
+    def decode_der(self, decoder):
+        decoder.enter(self.tag)
+        value = decoder.read_type(self.itemtype)
+        decoder.leave()
+        return value
+
+    def encode_value(self, encoder, value):
+        encoder.enter(self.tag)
+        if self.has_writer:
+            self.itemtype.encode_value(encoder, value)
+        else:
+            encoder.write(value)
+        encoder.leave()
+
+class Optional:
+    def __init__(self, itemtype):
+        if itemtype in ( None, type(None) ):
+            raise TypeError("That won't work, because we use the None value to indicate the absence of an optional value.")
+        if hasattr(itemtype, 'decode_der') and hasattr(itemtype, 'decodes_der_tag'):
+            self.lookaside = False
+            self.has_writer = hasattr(itemtype, 'encode_value')
+        elif isinstance(itemtype, type) and issubclass(itemtype, lookaside_types):
+            self.lookaside = True
+            self.has_writer = False
+        else:
+            raise TypeError('%s does not implement decode_der() and decodes_der_tag()' % (itemtype,))
+        self.itemtype = itemtype
+
+    def decode_der(self, decoder):
+        next_tag = decoder.peek()
+        if self.lookaside:
+            if not lookaside_decodes_der_tag(self.itemtype, next_tag):
+                return None
+            return decoder.read_type(self.itemtype)
+        else:
+            if not self.itemtype.decodes_der_tag(next_tag):
+                return None
+            return self.itemtype.decode_der(decoder)
+
+    def encode_value(self, encoder, value):
+        if value is None:
+            return
+        elif self.has_writer:
+            self.itemtype.encode_value(encoder, value)
+        else:
+            encoder.write(value)
+
+class Choice:
+    def __init__(self, types):
+        self.types = types
+    def decodes_der_tag(self, tag):
+        return any(lookaside_decodes_der_tag(t, tag) for t in self.types)
+    def decode_der(self, decoder):
+        peeked = decoder.peek()
+        for t in self.types:
+            if lookaside_decodes_der_tag(t, peeked):
+                return decoder.read_type(t)
+        raise DecodeError('No CHOICE element starts with %r' % (peeked,))
+
+lookaside_types = ( bool, int, bytes, datetime.datetime, str )
+def lookaside_decodes_der_tag(pythontype, tag: Tag) -> bool:
+    method = getattr(pythontype, 'decodes_der_tag', None)
+    if method is not None:
+        return method(tag)
+    if pythontype == bool:
+        return tag == Tag.Boolean
+    elif issubclass(pythontype, int):
+        return tag == Tag.Integer
+    elif issubclass(pythontype, bytes):
+        return tag == Tag.OctetString
+    elif pythontype == datetime.datetime:
+        return tag == Tag.GeneralizedTime
+    elif pythontype == str:
+        return tag.constructed == False and tag.cls == Tag.Universal and tag.tag in Decoder._string_mappings
+    else:
+        raise ValueError('No tag discriminator for type %r' % (repr(pythontype),))
 
