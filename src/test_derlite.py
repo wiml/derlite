@@ -1,6 +1,6 @@
 
 import derlite
-from derlite import Tag
+from derlite import Tag, Oid
 
 import codecs, datetime, unittest
 
@@ -149,7 +149,7 @@ class Test (unittest.TestCase):
         dec = self.around(enc, '310C 04020102 04020104 04020108')
 
         enc = derlite.Encoder()
-        enc.write_set( [ None, False, [], derlite.Oid((1, 10)), True ] )
+        enc.write_set( [ None, False, [], Oid((1, 10)), True ] )
         dec = self.around(enc, '310D 010100 0101FF 0500 060132 3000')
 
     def test_strings_1(self):
@@ -183,6 +183,31 @@ class Test (unittest.TestCase):
         self.assertEqual(dec.read_string(), '\u00ABM\u00FCller, Fran\u00E7ois, \u0152rsted, l\'H\u00F4pital\u00BB')
         self.assertEqual(dec.read_string(), '($)')
         self.assertTrue(dec.eof())
+
+    def test_bad_usage(self):
+
+        # Trying to getvalue() when we don't have a complete object
+        enc = derlite.Encoder()
+        enc.enter(Tag(1, True, Tag.Application))
+        enc.write(True)
+        self.assertRaises(derlite.Error,
+                          enc.getvalue)
+
+        # Trying to leave() more than we enter()
+        enc = derlite.Encoder()
+        enc.enter(2)
+        enc.write(1)
+        enc.leave()
+        enc.write(2)
+        self.assertRaises(derlite.Error,
+                          enc.leave)
+
+        # Trying to write an unsupported type
+        enc = derlite.Encoder()
+        enc.write(b'foo')
+        self.assertRaises(TypeError,
+                          enc.write, u'bar')
+
 
 class TestDatetimes (unittest.TestCase):
 
@@ -290,6 +315,28 @@ class TestOids (unittest.TestCase):
         self.assertIn(pkcs, s)
         self.assertIn(pkcs1, s)
 
+    def test_bad_values(self):
+
+        oid = Oid('1.2.3')
+        self.assertRaises(TypeError,
+                          lambda: oid + (5, 6, "bananas", 7))
+
+        # There's no encoding for a 0- or 1-element OID.
+        self.assertRaises(ValueError,
+                          lambda a: Oid(a).as_der(),
+                          (1,))
+        self.assertRaises(ValueError,
+                          lambda a: Oid(a).as_der(),
+                          ())
+
+        # The first two elements have constrained ranges because
+        # of the way they're encoded.
+        self.assertRaises(ValueError,
+                          lambda a: Oid(a).as_der(),
+                          (1000,2,3,4))
+        self.assertRaises(ValueError,
+                          lambda a: Oid(a).as_der(),
+                          (1,50,3))
 
 class BitSetTest (unittest.TestCase):
 
@@ -342,3 +389,153 @@ class BitSetTest (unittest.TestCase):
             b3 = fs.make_der([ 'c' ], tl=False)
             self.assertEqual(b3[0], self.expected_padding(dw+1))
             self.assertEqual(b3[-1], 1 << (7 - (dw%8)))
+
+
+class TypeCombTest (unittest.TestCase):
+
+    def roundtrip(self, d, dt, der):
+        der = bytes.fromhex(der)
+        
+        enc = derlite.Encoder()
+        enc.write_value_of_type(d, dt)
+        got = enc.getvalue()
+        self.assertEqual(got, der)
+
+        dec = derlite.Decoder(der)
+        got = dec.read_type(dt)
+        self.assertEqual(d, got)
+
+    def test_seqs(self):
+
+        thing = derlite.Structure(
+            ( int,
+              datetime.datetime,
+              derlite.SequenceOf(Oid),
+              bytes
+            )
+        )
+
+        self.roundtrip(
+            ( 1000, datetime.datetime(1969, 7, 20, 10, 56),
+              [ Oid( (1, k, 10) ) for k in (0, 3, 9) ],
+              b'some more stuff' ),
+            thing,
+            '3033'
+            '020203E8'
+            '180E' + bytes.hex(b'19690720105600') +
+            '300C'
+            '0602280A 06022B0A 0602310A'
+            '040F' + bytes.hex(b'some more stuff'))
+            
+        self.roundtrip(
+            ( -1, datetime.datetime(1234, 4, 5, 6, 7, 8),
+              [],
+              b'' ),
+            thing,
+            '3017'
+            '0201FF'
+            '180E' + bytes.hex(b'12340405060708') +
+            '3000'
+            '0400')
+
+        thing = ( int, bool, bytes )
+        self.roundtrip(
+            ( -129, False, b'' ),
+            thing,
+            '0202FF7F 010100 0400')
+
+        thing = derlite.ExplicitlyTagged(
+            Tag(16, True, Tag.Application),
+            derlite.Structure(
+                (
+                    derlite.SequenceOf(int),
+                    Oid
+                )
+            )
+        )
+        self.roundtrip( ([1,2,3], Oid((1,2,3))),
+                        thing,
+                        '7011 '
+                        '300F '
+                        '3009 020101 020102 020103'
+                        '06022A03')
+        
+    def test_choice(self):
+
+        thing = derlite.SequenceOf( derlite.Choice(
+            (
+                int,
+                Oid,
+                bool,
+            )
+        ))
+
+        self.roundtrip(
+            [],
+            thing,
+            '3000')
+
+        self.roundtrip(
+            [ 42 ],
+            thing,
+            '3003 02012A')
+        
+        self.roundtrip(
+            [ Oid('1.8.10000'), -128, False ],
+            thing,
+            '300B'
+            '060330CE10'
+            '020180'
+            '010100')
+
+        thing = derlite.Structure(
+            ( derlite.Choice(
+                (bytes,
+                 bool,
+                 derlite.Choice( (datetime.datetime, int) )
+                )
+            ),)
+        )
+
+        self.roundtrip(
+            ( b'foo', ),
+            thing,
+            '3005 0403666F6F')
+        self.roundtrip(
+            ( 12, ),
+            thing,
+            '3003 02010C')
+        self.roundtrip(
+            ( False, ),
+            thing,
+            '3003 010100')
+
+    def test_optionals(self):
+        thing = derlite.Structure(
+            ( int,
+              derlite.Optional(derlite.ExplicitlyTagged(2, int) )
+            )
+        )
+        self.roundtrip( (3, None), thing, '3003 020103' )
+        self.roundtrip( (3, 5), thing, '3008 020103 A203 020105' )
+        self.roundtrip( (0, 0), thing, '3008 020100 A203 020100' )
+
+        thing = derlite.Structure(
+            ( derlite.Optional(derlite.ExplicitlyTagged(31, bytes)),
+              derlite.Optional(int)
+            )
+        )
+        self.roundtrip( (None, None), thing, '3000' )
+        self.roundtrip( (None, 1   ), thing, '3003 020101' )
+        self.roundtrip( (b'A', None), thing, '3006 BF1F03 040141' )
+        self.roundtrip( (b'B', 128 ), thing, '300A BF1F03 040142 02020080' )
+
+        thing = derlite.Optional(
+            derlite.Structure(
+                ( int, Oid )
+            )
+        )
+        self.roundtrip(None, thing, '')
+        self.roundtrip( (4, Oid('2.1.128')), thing,
+                        '3008 020104 0603518100')
+

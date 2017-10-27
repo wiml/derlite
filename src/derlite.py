@@ -1003,9 +1003,13 @@ class SequenceOf:
     def decode_der(self, decoder):
         decoder.enter(self.tag)
         items = list()
-        while not decoder.eof():
-            item = self.itemtype.decode_der(decoder)
-            items.append(item)
+        decode_der_impl = getattr(self.itemtype, 'decode_der', None)
+        if decode_der_impl is None:
+            while not decoder.eof():
+                items.append(decoder.read_type(self.itemtype))
+        else:
+            while not decoder.eof():
+                items.append(decode_der_impl(decoder))
         decoder.leave()
         return items
 

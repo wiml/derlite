@@ -19,6 +19,7 @@ Features
 - Complex application-specific types can be supported in an object-oriented way.
 - Fairly easy to hand-write a parser and an encoder for your chosen
   ASN.1 structures.
+- Easy to mix ad-hoc and more structured styles.
 - 100% python, compatible with version 3.5 and higher
 
   
