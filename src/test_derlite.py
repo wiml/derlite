@@ -1,6 +1,6 @@
 
 import derlite
-from derlite import Tag, Oid
+from derlite import Tag, Oid, DecodeError
 
 import codecs, datetime, unittest
 
@@ -63,6 +63,33 @@ class Test (unittest.TestCase):
         self.assertEqual(dec.read_integer(), 128)
         self.assertTrue(dec.eof())
 
+    def test_decode_failures(self):
+
+        # An object goes past the end
+        dec = derlite.Decoder(bytes.fromhex('020201'))
+        self.assertRaises(DecodeError, dec.read_integer)
+        
+        # A sequence goes past the end
+        dec = derlite.Decoder(bytes.fromhex('020101 3004 020101'))
+        self.assertEqual(dec.read_integer(), 1)
+        self.assertRaises(DecodeError, dec.enter)
+
+        # An object goes past the end of its container
+        dec = derlite.Decoder(bytes.fromhex('020101 3003 02020100'))
+        self.assertEqual(dec.read_integer(), 1)
+        self.assertEqual(dec.enter(), Tag.Sequence)
+        self.assertRaises(DecodeError, dec.read_integer)
+
+        dec = derlite.Decoder(bytes.fromhex('020101 3001 02020100'))
+        self.assertEqual(dec.read_integer(), 1)
+        self.assertEqual(dec.enter(), Tag.Sequence)
+        self.assertRaises(DecodeError, dec.read_integer)
+
+        dec = derlite.Decoder(bytes.fromhex('0282000101 3003 0282000101'))
+        self.assertEqual(dec.read_integer(), 1)
+        self.assertEqual(dec.enter(), Tag.Sequence)
+        self.assertRaises(DecodeError, dec.read_integer)
+    
     def test_integers(self):
         # Test correct encoding of integers of various widths
         enc = derlite.Encoder()
@@ -152,6 +179,13 @@ class Test (unittest.TestCase):
         enc.write_set( [ None, False, [], Oid((1, 10)), True ] )
         dec = self.around(enc, '310D 010100 0101FF 0500 060132 3000')
 
+    def test_set3(self):
+        enc = derlite.Encoder()
+        enc.write_set( [ 1, 0 ],
+                       pythontype=derlite.ExplicitlyTagged(0, int))
+        self.assertEqual(enc.getvalue(),
+                         bytes.fromhex('310A A003020100 A003020101'))
+    
     def test_strings_1(self):
         # Test decoding some strings.
 
@@ -362,10 +396,7 @@ class BitSetTest (unittest.TestCase):
 
     @staticmethod
     def expected_padding(bitwidth):
-        if bitwidth == 0:
-            return 0
-        else:
-            return 7 - ((bitwidth-1) % 8)
+        return 7 - ((bitwidth+7) % 8)
 
     def test_widths(self):
         for dw in (1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 30, 31, 32, 33):

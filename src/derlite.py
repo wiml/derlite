@@ -406,13 +406,8 @@ class Decoder:
         If the `tag` argument is set to a different tag, it will read an object
         of that type and return its content octets without further interpretation.
         """
-        self.expect_tag(tag)
-        (length, pos) = self._decode_length(self.data, self._position, self._end)
-        if pos+length > self._end:
-            raise DecodeError('object extends %s bytes past end of buffer' % (pos+length - self._end,))
-        self._position = pos+length
-        self._peeked_tag = None
-        return self.data[pos : pos+length]
+        (_, data, pos, end) = self.read_slice(tag=tag)
+        return data[pos:end]
     
     def read_slice(self, tag=None, optional=False):
         """Reads an object, returning the decoder's internal buffer and the
@@ -430,8 +425,11 @@ class Decoder:
 
         if tag is None:
             peeked = self.peek()
-            if peeked is None and not optional:
-                raise DecodeError('Unexpected EOF')
+            if peeked is None:
+                if optional:
+                    return None
+                else:
+                    raise DecodeError('Unexpected EOF')
         else:
             peeked = self.expect_tag(tag, optional=optional)
         if peeked is None:
@@ -457,10 +455,10 @@ class Decoder:
     
     def read_integer(self) -> int:
         """Reads an INTEGER and returns it as a Python `int`."""
-        buf = self.read_octet_string(Tag.Integer)
-        if len(buf) == 0:
+        (_, buf, pos, end) = self.read_slice(Tag.Integer)
+        if pos == end:
             return 0
-        return int.from_bytes(buf, 'big', signed=True)
+        return int.from_bytes(buf[pos:end], 'big', signed=True)
 
     def read_boolean(self) -> bool:
         """Reads a BOOLEAN and returns it as a Python `bool`."""
@@ -629,9 +627,13 @@ class Decoder:
             if peeked is None:
                 return None
 
-        (length, self._position) = self._decode_length(self.data, self._position, self._end)
-        self._stack.append( (self._position + length, self._end) )
-        self._end = self._position + length
+        (length, pos) = self._decode_length(self.data, self._position, self._end)
+        nextpos = length + pos
+        if nextpos > self._end:
+            raise DecodeError('object extends %s bytes past end of buffer' % (nextpos - self._end,))
+        self._stack.append( (nextpos, self._end) )
+        self._position = pos
+        self._end = nextpos
         self._peeked_tag = None
         return peeked
 
