@@ -166,9 +166,11 @@ class Test (unittest.TestCase):
 
         # Test encoding of tags
         enc = derlite.Encoder()
+        # Tag numbers >= 31 have a different encoding
         enc.enter(31)
         enc.write_tagged_bytes(Tag(16, constructed=False, cls=Tag.Application),
                                b'      ')
+        # Object lengths >= 128 bytes have a different encoding
         ablob = b'ABCDE' * 100
         enc.write_tagged_bytes(Tag(1000, constructed=False, cls=Tag.Context),
                                ablob)
@@ -360,13 +362,14 @@ class TestOids (unittest.TestCase):
                           b'\x06\x02\x2A\x03\x01')
 
     def test_misc(self):
-        self.assertEqual(str(derlite.Oid( (2,5,4,3) )),
+        # Creating sub-OIDs, comparison, hashing, etc.
+        self.assertEqual(str(Oid( (2,5,4,3) )),
                          '2.5.4.3')
-        pkcs = derlite.Oid( '1.2.840.113549.1' )
+        pkcs = Oid( '1.2.840.113549.1' )
         pkcs1 = pkcs + (1,)
         self.assertEqual(repr(pkcs1),
                          'Oid((1, 2, 840, 113549, 1, 1))')
-        pkcs_ = derlite.Oid(b'\x06\x07*\x86H\x86\xf7\x0d\x01')
+        pkcs_ = Oid(b'\x06\x07*\x86H\x86\xf7\x0d\x01')
         self.assertEqual(pkcs, pkcs_)
         self.assertLess(pkcs_, pkcs1)
         self.assertGreater(pkcs1, pkcs)

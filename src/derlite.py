@@ -126,9 +126,17 @@ string_tags = (
 )
 
 class Error(Exception):
+    """Exceptions raised by the Encoder and Decoder classes when called
+    incorrectly (and when a specific exception such as ValueError or
+    TypeError is not appropriate). This exeception usually indicates a
+    programming error.
+    """
     pass
 
 class DecodeError(ValueError):
+    """Raised by `Decoder` when the input data does not
+    correspond to the caller's expectations, or when the input is not
+    valid DER."""
     pass
     
 class Encoder:
@@ -507,7 +515,7 @@ class Decoder:
             raise TypeError("Don't know how to decode BER for type %s" % (pythontype,))
 
     @classmethod
-    def check_readable_type(self, pythontype) -> bool:
+    def check_readable_type(self, pythontype) -> None:
         """Tests whether an object is usable as the type argument to read_type().
         If not, raises an exception."""
         if hasattr(pythontype, 'decode_der') or \
