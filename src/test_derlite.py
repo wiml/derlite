@@ -63,6 +63,43 @@ class Test (unittest.TestCase):
         self.assertEqual(dec.read_integer(), 128)
         self.assertTrue(dec.eof())
 
+    def test_implicit_tagging(self):
+
+        enc = derlite.Encoder()
+        enc.enter_implicit_tag(1)
+        enc.write(42)
+
+        enc.write(1)
+
+        enc.enter_implicit_tag(Tag(0, True, Tag.Application))
+        enc.enter(Tag.Sequence)
+        enc.write(b'foo')
+        enc.write(b'bar')
+        enc.leave()
+
+        dec = self.around(enc,
+                          '81012A 020101 600A 0403666F6F 0403626172')
+
+        self.assertEqual(dec.peek(), Tag(1, False, Tag.Context))
+        self.assertRaises(DecodeError, dec.read_integer)
+        dec.enter_implicit_tag(Tag(1, False, Tag.Context), Tag.Integer)
+        self.assertEqual(dec.read_integer(), 42)
+
+        self.assertIsNone(dec.enter_implicit_tag(1, Tag.Integer, optional=True))
+        self.assertEqual(dec.read_integer(), 1)
+
+        self.assertIsNone(dec.enter(Tag.Sequence, optional=True))
+        dec.enter_implicit_tag(Tag(0, True, Tag.Application),
+                               Tag.Sequence)
+        dec.enter(Tag.Sequence)
+        self.assertEqual(dec.read_type(bytes), b'foo')
+        self.assertEqual(dec.read_octet_string(), b'bar')
+        self.assertRaises(DecodeError,
+                          lambda:  dec.enter_implicit_tag(Tag(2, False, Tag.Context),
+                                                          Tag.Sequence))
+        dec.leave()
+        self.assertTrue(dec.eof())
+
     def test_decode_failures(self):
 
         # An object goes past the end
