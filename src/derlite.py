@@ -376,17 +376,17 @@ class Encoder:
             s += usec.rstrip('0')
         s += extinfo
         return s.encode('ascii')
-    
+
 class Decoder:
     """A decoder of DER and (some) BER data."""
 
-    def __init__(self, data: bytes) -> None:
-        if not isinstance(data, bytes):
-            raise TypeError('Expecting bytes instance.')
+    def __init__(self, data: bytes, start=0, end=None) -> None:
         self.data = data
         self._stack = []
-        self._position = 0
-        self._end = len(data)
+        self._position = start
+        self._end = len(data) if end is None else end
+        if self._end > start and not isinstance(data[start], int):
+            raise TypeError('Expecting bytes instance.')
         self._peeked_tag = None
 
     def peek(self) -> Tag:
