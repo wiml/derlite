@@ -335,9 +335,9 @@ class TestDatetimes (unittest.TestCase):
 class TestOids (unittest.TestCase):
 
     def roundtrip(self, arcs, der):
-        o = derlite.Oid(arcs)
+        o = Oid(arcs)
         self.assertEqual(o.as_der(), der)
-        o = derlite.Oid(der)
+        o = Oid(der)
         self.assertEqual(o.arcs(), arcs)
 
     def test_encoding(self):
@@ -346,19 +346,19 @@ class TestOids (unittest.TestCase):
         self.roundtrip( (2,5,4,3), b'\x06\x03\x55\x04\x03')
 
     def test_parses(self):
-        self.assertEqual(derlite.Oid( '2.5.4.3' ).as_der(),
+        self.assertEqual(Oid( '2.5.4.3' ).as_der(),
                          b'\x06\x03\x55\x04\x03')
-        self.assertEqual(derlite.Oid( '{ 1.2.840.10040.4.1 }' ).as_der(),
+        self.assertEqual(Oid( '{ 1.2.840.10040.4.1 }' ).as_der(),
                           b'\x06\x07\x2A\x86\x48\xCE\x38\x04\x01')
-        self.assertEqual(derlite.Oid( [ 3, 9 ] ).arcs(),
+        self.assertEqual(Oid( [ 3, 9 ] ).arcs(),
                          (3, 9))
-        
+
         self.assertRaises(Exception,
-                          derlite.Oid, 42)
+                          Oid, 42)
         self.assertRaises(derlite.DecodeError,
-                          derlite.Oid, b'\x03\x03\x55\x04\x03')
+                          Oid, b'\x03\x03\x55\x04\x03')
         self.assertRaises(derlite.DecodeError,
-                          lambda x: derlite.Oid(x).arcs(),
+                          lambda x: Oid(x).arcs(),
                           b'\x06\x02\x2A\x03\x01')
 
     def test_misc(self):
@@ -530,7 +530,7 @@ class TypeCombTest (unittest.TestCase):
                         '300F '
                         '3009 020101 020102 020103'
                         '06022A03')
-        
+
     def test_choice(self):
 
         thing = derlite.SequenceOf( derlite.Choice(

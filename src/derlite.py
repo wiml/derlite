@@ -106,7 +106,7 @@ class Tag (tuple):
         return 'Tag(%r%s, cls=%s)' % (self.tag,
                                       ', constructed=True' if self.constructed else '',
                                       cls)
-    
+
 for (n, v) in Tag._universal_tags:
     setattr(Tag, n, Tag(tag=v, constructed = (v in (0x11, 0x10)), cls = Tag.Universal))
 del n, v
@@ -138,7 +138,7 @@ class DecodeError(ValueError):
     correspond to the caller's expectations, or when the input is not
     valid DER."""
     pass
-    
+
 class Encoder:
     """A class to encode structures according to the Distinguished Encoding Rules (DER).
 
@@ -164,12 +164,13 @@ class Encoder:
         return self._fragments.getvalue()
         
     def enter(self, nr):
-        """Begin constructing a constructed type. Calls to enter() must
-        be balanced by calls to leave().
+        """Begin constructing a constructed type. Calls to
+        `enter()` must be balanced by calls to `leave()`.
 
-        Argument:
-            nr (int or Tag): The desired ASN.1 tag number. An integer is
-            interpreted as a tag value in the Context class.
+        The argument is the desired ASN.1 tag, as a
+        `Tag`. As a convenience, an integer is interpreted
+        as a tag value in the Context class.
+
         """
         if isinstance(nr, int):
             self._emit_tag(nr, True, Tag.Context)
@@ -790,9 +791,9 @@ class Decoder:
 
         return datetime.datetime(yyyy, mm, dd, HH, MM, SS, usec,
                                  tzinfo=tz)
-    
 
-    
+
+
 class Oid:
     """Represents an object identifier (a sequence of integers).
 
@@ -923,7 +924,7 @@ class Oid:
                     if val == 0:
                         raise DecodeError('non-DER OID encoding')
         except IndexError as exc:
-            raise DecodeError('truncated OID')
+            raise DecodeError('truncated OID') # from exc
         return tuple(arcs)
 
 class OptionFlagSet:
