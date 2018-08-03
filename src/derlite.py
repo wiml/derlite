@@ -87,6 +87,7 @@ class Tag (tuple):
     cls = property(lambda x: x[2])
 
     def __new__(self, tag, constructed=False, cls=0x00):
+        # type: (int, bool, int) -> Tag
         return tuple.__new__(self, (tag, constructed, cls))
     
     def __repr__(self):
@@ -180,6 +181,7 @@ class Encoder:
         self._fragments = io.BytesIO()
 
     def leave(self):
+        # type: () -> None
         """Finish constructing a constructed type, balancing an earlier
         call to `enter()`.
         """
@@ -264,12 +266,12 @@ class Encoder:
         else:
             raise TypeError('No default encoding for type %r' % (type(value).__name__,))
 
-    def write_tagged_bytes(self, tag: Tag, der: bytes):
+    def write_tagged_bytes(self, tag: Tag, der: bytes) -> None:
         """Write a tag with arbitrary contents (supplied as a bytes object)."""
         self._emit_tag_length(tag, len(der))
         self._fragments.write(der)
 
-    def write_raw_bytes(self, nonder: bytes):
+    def write_raw_bytes(self, nonder: bytes) -> None:
         """Write bytes into the output stream, without any DER tagging.
         This can be used for an object that is already tagged, or
         for formats which include non-DER data in a DER container."""
@@ -324,12 +326,14 @@ class Encoder:
             self.write(value)
     
     def _emit_tag_length(self, tag, length):
+        # type: (Tag, int) -> None
         self._emit_tag(tag.tag,
                        tag.constructed,
                        tag.cls)
         self._fragments.write(self._encode_length(length))
 
     def _emit_tag(self, tagnr, constructed, cls):
+        # type: (int, bool, int) -> None
         if self._pending_implicit is not None:
             # Write the implicit tag instead of the actual one. But use the
             # constructed flag from the real tag.
@@ -363,6 +367,7 @@ class Encoder:
 
     @staticmethod
     def _encode_generalizedtime(value):
+        # type: (datetime.datetime) -> bytes
         tz = value.tzinfo
         if tz is not None:
             extinfo = value.strftime('%z')
@@ -408,7 +413,7 @@ class Decoder:
             self._peeked_tag = self._read_tag()
         return self._peeked_tag
 
-    def read_octet_string(self, tag=Tag.OctetString) -> bytes:
+    def read_octet_string(self, tag: Tag = Tag.OctetString) -> bytes:
         """Reads an OCTET STRING from the buffer, returning its content octets as
         a bytes object, or raising DecodeError on failure.
 
@@ -585,8 +590,8 @@ class Decoder:
                 buf = b'\x1B\x28\x42\x0F\x1B\x21\x40' + buf
 
         return buf.decode(enc)
-    
-    def read_generalizedtime(self):
+
+    def read_generalizedtime(self) -> datetime.datetime:
         """Reads a GeneralizedTime and returns it as a Python `datetime`.
 
         The returned datetime may be naive, if the GeneralizedTime
@@ -718,7 +723,7 @@ class Decoder:
                     if (byte & 0x80) == 0:
                         break
         except IndexError as e:
-            raise DecodeError('Truncated object') # from e
+            raise DecodeError('Truncated object') from e
         if pos >= self._end:
             raise DecodeError('Truncated object')
         self._position = pos
@@ -894,7 +899,7 @@ class Oid:
 
     @staticmethod
     def _valid_header(d: bytes) -> int:
-        if d[0] != 0x06:
+        if len(d) < 2 or d[0] != 0x06:
             raise DecodeError('Not a DER-encoded OID')
         (olen, pos) = Decoder._decode_length(d, 1, len(d))
         if pos + olen != len(d):
@@ -924,7 +929,7 @@ class Oid:
                     if val == 0:
                         raise DecodeError('non-DER OID encoding')
         except IndexError as exc:
-            raise DecodeError('truncated OID') # from exc
+            raise DecodeError('truncated OID') from exc
         return tuple(arcs)
 
 class OptionFlagSet:
