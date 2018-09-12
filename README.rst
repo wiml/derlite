@@ -14,13 +14,15 @@ Features
 ========
 
 - Straightforward encoding of most primitive types (except character
-  strings), SETs, SEQUENCEs, and explicit tags.
+  strings), SETs, SEQUENCEs, and implicit and explicit tags.
 - Correct decoding of character string types.
 - Complex application-specific types can be supported in an object-oriented way.
 - Fairly easy to hand-write a parser and an encoder for your chosen
   ASN.1 structures.
 - Easy to mix ad-hoc and more structured styles.
 - 100% python, compatible with version 3.5 and higher
+- the module is a single file and is MIT-licensed; it can be used via
+  PyPI_ or simply included in a larger project
 
   
 Missing Features

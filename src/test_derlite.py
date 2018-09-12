@@ -9,7 +9,7 @@ try:
     teletex_available = True
 except LookupError:
     teletex_available = False
-    
+
 class Test (unittest.TestCase):
 
     def around(self, enc, der):
@@ -105,7 +105,7 @@ class Test (unittest.TestCase):
         # An object goes past the end
         dec = derlite.Decoder(bytes.fromhex('020201'))
         self.assertRaises(DecodeError, dec.read_integer)
-        
+
         # A sequence goes past the end
         dec = derlite.Decoder(bytes.fromhex('020101 3004 020101'))
         self.assertEqual(dec.read_integer(), 1)
@@ -126,7 +126,7 @@ class Test (unittest.TestCase):
         self.assertEqual(dec.read_integer(), 1)
         self.assertEqual(dec.enter(), Tag.Sequence)
         self.assertRaises(DecodeError, dec.read_integer)
-    
+
     def test_integers(self):
         # Test correct encoding of integers of various widths
         enc = derlite.Encoder()
@@ -224,7 +224,7 @@ class Test (unittest.TestCase):
                        pythontype=derlite.ExplicitlyTagged(0, int))
         self.assertEqual(enc.getvalue(),
                          bytes.fromhex('310A A003020100 A003020101'))
-    
+
     def test_strings_1(self):
         # Test decoding some strings.
 
@@ -373,7 +373,7 @@ class TestOids (unittest.TestCase):
         self.assertEqual(pkcs, pkcs_)
         self.assertLess(pkcs_, pkcs1)
         self.assertGreater(pkcs1, pkcs)
-        
+
         s = set()
         self.assertNotIn(pkcs, s)
         self.assertNotIn(pkcs_, s)
@@ -419,7 +419,7 @@ class BitSetTest (unittest.TestCase):
         self.assertEqual(fs.make_der(flags, tl=True), der)
         dec = derlite.Decoder(der)
         self.assertEqual(fs.decode_der(dec), flags)
-    
+
     def test(self):
         fs = derlite.OptionFlagSet('foo',
                                    ( ('bob', 1),
@@ -466,7 +466,7 @@ class TypeCombTest (unittest.TestCase):
 
     def roundtrip(self, d, dt, der):
         der = bytes.fromhex(der)
-        
+
         enc = derlite.Encoder()
         enc.write_value_of_type(d, dt)
         got = enc.getvalue()
@@ -497,7 +497,7 @@ class TypeCombTest (unittest.TestCase):
             '300C'
             '0602280A 06022B0A 0602310A'
             '040F' + bytes.hex(b'some more stuff'))
-            
+
         self.roundtrip(
             ( -1, datetime.datetime(1234, 4, 5, 6, 7, 8),
               [],
@@ -550,7 +550,7 @@ class TypeCombTest (unittest.TestCase):
             [ 42 ],
             thing,
             '3003 02012A')
-        
+
         self.roundtrip(
             [ Oid('1.8.10000'), -128, False ],
             thing,

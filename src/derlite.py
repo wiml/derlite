@@ -62,7 +62,7 @@ class Tag (tuple):
         ( 'NumericString', 0x12 ),    # ASCII subset
         ( 'PrintableString', 0x13 ),  # ASCII subset
         ( 'VisibleString', 0x1a ),    # ASCII subset
-        
+
         # The following are all based on ISO-2022, which uses escape
         # sequences to switch into various other character sets.
         # The TeletexString and VideotexString encodings allow the
@@ -78,7 +78,7 @@ class Tag (tuple):
     Application = 0x40
     Context = 0x80
     Private = 0xC0
-    
+
     __slots__ = ()
     _fields = ('tag', 'constructed', 'cls')
 
@@ -86,7 +86,7 @@ class Tag (tuple):
     constructed = property(lambda x: x[1])
     cls = property(lambda x: x[2])
 
-    def __new__(self, tag, constructed=False, cls=0x00):
+    def __new__(self, tag, constructed = False, cls = 0x00):
         # type: (int, bool, int) -> Tag
         return tuple.__new__(self, (tag, constructed, cls))
     
@@ -163,7 +163,7 @@ class Encoder:
         if len(self._stack) > 0 or self._pending_implicit is not None:
             raise Error('Unclosed constructed type')
         return self._fragments.getvalue()
-        
+
     def enter(self, nr):
         """Begin constructing a constructed type. Calls to
         `enter()` must be balanced by calls to `leave()`.
@@ -201,7 +201,7 @@ class Encoder:
         # encoding.
         if self._pending_implicit is None:
             self._pending_implicit = Tag(nr, True, Tag.Context) if isinstance(nr, int) else nr
-        
+
     def write(self, value):
         """Write one Python object to the buffer.
 
@@ -220,7 +220,7 @@ class Encoder:
         datetime      -> GeneralizedTime
 
         """
-        
+
         if hasattr(value, 'encode_der'):
             value.encode_der(self)
         elif hasattr(value, 'as_der'):
@@ -285,7 +285,7 @@ class Encoder:
         writable values. They are encoded to individual buffers, which are then
         sorted before being appended to the output, in order to produce
         canonical DER encoding."""
-        
+
         self.enter(Tag.Set)
         members = list()
         content_length = 0
@@ -324,7 +324,7 @@ class Encoder:
                 self.write_value_of_type(value[ix], pythontype[ix])
         else:
             self.write(value)
-    
+
     def _emit_tag_length(self, tag, length):
         # type: (Tag, int) -> None
         self._emit_tag(tag.tag,
@@ -351,7 +351,8 @@ class Encoder:
             self._fragments.write(bytes(buf))
 
     @staticmethod
-    def _encode_length(length) -> bytes:
+    def _encode_length(length):
+        # type: () -> bytes
         if length < 128:
             return bytes([length])
         else:
@@ -422,7 +423,7 @@ class Decoder:
         """
         (_, data, pos, end) = self.read_slice(tag=tag)
         return data[pos:end]
-    
+
     def read_slice(self, tag=None, optional=False):
         """Reads an object, returning the decoder's internal buffer and the
         range occupied by the object's content octets.
@@ -466,7 +467,7 @@ class Decoder:
         value = self.data[self._position : endpos]
         self._position = endpos
         return value
-    
+
     def read_integer(self) -> int:
         """Reads an INTEGER and returns it as a Python `int`."""
         (_, buf, pos, end) = self.read_slice(Tag.Integer)
@@ -678,7 +679,7 @@ class Decoder:
             return None
         else:
             raise DecodeError('Expected %s, but found %s' % (tag, peeked))
-    
+
     def leave(self, require_end=True) -> None:
         """Leaves the constructed type that was most recently enter()ed.
 
@@ -705,7 +706,7 @@ class Decoder:
                                constructed=self._peeked_tag.constructed,
                                cls=inner.cls)
         return peeked
-        
+
     def _read_tag(self) -> Tag:
         """Read a tag from the input."""
         try:
@@ -777,7 +778,7 @@ class Decoder:
            (len(value) > 14 and (len(value) < 15 or value[14] not in (0x2E, 0x2C))) or \
            len(value) > 21:
             raise DecodeError('Invalid GeneralizedTime')
-        
+
         yyyy = int(value[0:4])
         mm   = int(value[4:6])
         dd   = int(value[6:8])
@@ -851,7 +852,7 @@ class Oid:
         return self.as_der() == other.as_der()
     def __lt__(self, other):
         return self.arcs() < other.arcs()
-    
+
     def __str__(self):
         return '.'.join(map(str, self.arcs()))
     def __repr__(self):
@@ -873,7 +874,7 @@ class Oid:
     @staticmethod
     def decodes_der_tag(tag):
         return tag == Tag.ObjectIdentifier
-    
+
     @staticmethod
     def make_der(arcs, tl=True) -> bytes:
         """Construct the DER representation of an OID, given as a sequence of
@@ -971,7 +972,7 @@ class OptionFlagSet:
             max_padding_in_last_byte = 0
         if min_bytes > 0:
             bytevalues.extend(0 for i in range(0, min_bytes))
-        
+
         # Set bits in a number vector
         for item in bits_set:
             if not isinstance(item, int):
