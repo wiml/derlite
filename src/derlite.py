@@ -29,7 +29,7 @@ Utilities for constructing and parsing DER-encoded data.
 
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __docformat__ = 'reStructuredText'
 
 import datetime, io, re
