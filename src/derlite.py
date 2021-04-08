@@ -1,7 +1,7 @@
 #
 # This file is part of DERlite.
 #
-# Copyright 2017 by Wim Lewis.
+# Copyright 2017, 2021 by Wim Lewis.
 #
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation files
@@ -89,8 +89,8 @@ class Tag (tuple):
     def __new__(self, tag, constructed = False, cls = 0x00):
         # type: (int, bool, int) -> Tag
         return tuple.__new__(self, (tag, constructed, cls))
-    
-    def __repr__(self):
+
+    def __repr__(self) -> str:
         if self.cls == Tag.Universal and ( self.constructed == (self.tag in (0x11, 0x10))):
             for (n, v) in self._universal_tags:
                 if v == self.tag:
@@ -394,6 +394,7 @@ class Decoder:
         if self._end > start and not isinstance(data[start], int):
             raise TypeError('Expecting bytes instance.')
         self._peeked_tag = None
+        self._peeked_pos = None
 
     def peek(self) -> Tag:
         """Returns the current ASN.1 tag as a Tag object, or None.
@@ -411,8 +412,17 @@ class Decoder:
         if self._peeked_tag is None:
             if self.eof():
                 return None
+            position = self._position
             self._peeked_tag = self._read_tag()
+            self._peeked_pos = position
         return self._peeked_tag
+
+    @property
+    def position(self) -> int:
+        if self._peeked_tag:
+            return self._peeked_pos
+        else:
+            return self._position
 
     def read_octet_string(self, tag: Tag = Tag.OctetString) -> bytes:
         """Reads an OCTET STRING from the buffer, returning its content octets as
@@ -454,6 +464,7 @@ class Decoder:
             raise DecodeError('object extends %s bytes past end of buffer' % (pos+length - self._end,))
         self._position = pos+length
         self._peeked_tag = None
+        self._peeked_pos = None
         return (peeked, self.data, pos, pos+length)
 
     def read_raw_bytes(self, bytecount: int) -> bytes:
@@ -636,6 +647,8 @@ class Decoder:
         if tag is None:
             peeked = self.peek()
             if peeked is None:
+                if optional:
+                    return None
                 raise DecodeError('Attempted to enter a subobject, but found EOF')
         else:
             peeked = self.expect_tag(tag, optional=optional)
@@ -650,6 +663,7 @@ class Decoder:
         self._position = pos
         self._end = nextpos
         self._peeked_tag = None
+        self._peeked_pos = None
         return peeked
 
     def expect_tag(self, tag, optional=False):
@@ -696,6 +710,7 @@ class Decoder:
         self._position = new_pos
         self._end = new_end
         self._peeked_tag = None
+        self._peeked_pos = None
 
     def enter_implicit_tag(self, outer, inner, optional=False):
         peeked = self.expect_tag(outer, optional=optional)
@@ -705,6 +720,8 @@ class Decoder:
         self._peeked_tag = Tag(tag=inner.tag,
                                constructed=self._peeked_tag.constructed,
                                cls=inner.cls)
+        # _peeked_pos is unchanged
+
         return peeked
 
     def _read_tag(self) -> Tag:
@@ -846,16 +863,16 @@ class Oid:
             self._arcs = self.parse_der(self._der)
         return self._arcs
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return self.as_der().__hash__()
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         return self.as_der() == other.as_der()
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
         return self.arcs() < other.arcs()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return '.'.join(map(str, self.arcs()))
-    def __repr__(self):
+    def __repr__(self) -> str:
         return 'Oid(' + repr(self.arcs()) + ')'
 
     def __add__(self, r):
